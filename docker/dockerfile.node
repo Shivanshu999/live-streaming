@@ -1,0 +1,16 @@
+# docker/Dockerfile.node
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files first (better caching)
+COPY server/package*.json ./
+
+RUN npm install --production
+
+# Copy server source
+COPY server/ .
+
+EXPOSE 3000
+
+CMD ["node", "src/index.js"]

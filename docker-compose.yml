@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    volumes:
+      - ./docker/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "1935:1935"   # RTMP
+      - "8888:8888"   # HLS (optional)
+    restart: unless-stopped
+
+  ffmpeg:
+    image: jrottenberg/ffmpeg:6-alpine
+    depends_on:
+      - mediamtx
+    volumes:
+      - ./streams:/app/streams
+    restart: unless-stopped
+    command: >
+      -fflags nobuffer -flags low_delay
+      -i rtmp://mediamtx:1935/live/test
+      -c:v libx264 -preset veryfast -tune zerolatency
+      -g 30 -keyint_min 30 -sc_threshold 0
+      -c:a aac -ar 48000
+      -f hls -hls_time 2 -hls_list_size 3
+      -hls_flags delete_segments+append_list+omit_endlist+independent_segments
+      /app/streams/hls/index.m3u8
+
+  server:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./server:/app
+      - ./streams:/app/streams
+      - ./public:/app/public
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install && node src/index.js"
+    restart: unless-stopped

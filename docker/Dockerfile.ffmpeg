@@ -1,0 +1,10 @@
+# docker/Dockerfile.ffmpeg
+FROM jrottenberg/ffmpeg:6-alpine
+
+WORKDIR /app
+
+# Create HLS output directory
+RUN mkdir -p /app/stream/hls
+
+# No ENTRYPOINT here
+# FFmpeg command will be provided by docker-compose

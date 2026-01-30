@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body>
+  <h2>Live Stream</h2>
+
+  <video
+    id="v"
+    controls
+    muted
+    playsinline
+    webkit-playsinline
+    style="width:100%; max-width:640px; background:black;"
+  ></video>
+
+  <button onclick="start()">▶️ Play Live</button>
+
+  <script>
+    function start() {
+      const video = document.getElementById("v");
+      video.src = "http://localhost:3000/hls/master.m3u8";
+      video.load();
+      video.play();
+    }
+  </script>
+</body>
+</html>
