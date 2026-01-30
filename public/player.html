@@ -1,29 +1,151 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-</head>
-<body>
-  <h2>Live Stream</h2>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABR Player with Quality Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: #0f172a;
+        color: white;
+        padding: 20px;
+      }
+      .video-container {
+        width: 100%;
+        max-width: 800px;
+        position: relative;
+      }
+      video {
+        width: 100%;
+        background: black;
+        border-radius: 12px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+      }
+      .controls {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button,
+      select {
+        padding: 10px 16px;
+        cursor: pointer;
+        background: #3b82f6;
+        border: none;
+        color: white;
+        border-radius: 6px;
+        font-weight: 600;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #2563eb;
+      }
+      select {
+        background: #334155;
+      }
+      label {
+        font-weight: bold;
+        margin-right: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Live Adaptive Stream</h2>
 
-  <video
-    id="v"
-    controls
-    muted
-    playsinline
-    webkit-playsinline
-    style="width:100%; max-width:640px; background:black;"
-  ></video>
+    <div class="video-container">
+      <video id="v" controls muted playsinline></video>
+    </div>
 
-  <button onclick="start()">▶️ Play Live</button>
+    <div class="controls">
+      <button onclick="startStream()">▶️ Load Stream</button>
 
-  <script>
-    function start() {
-      const video = document.getElementById("v");
-      video.src = "http://localhost:3000/hls/master.m3u8";
-      video.load();
-      video.play();
-    }
-  </script>
-</body>
+      <div>
+        <label for="qualitySelect">Quality:</label>
+        <select
+          id="qualitySelect"
+          disabled
+          onchange="changeQuality(this.value)"
+        >
+          <option value="-1">Auto (ABR)</option>
+        </select>
+      </div>
+    </div>
+
+    <script>
+      let hls = null;
+
+      function startStream() {
+        const video = document.getElementById("v");
+        const selector = document.getElementById("qualitySelect");
+        const streamUrl = "http://localhost:3000/hls/master.m3u8";
+        const realURl = "http://localhost:3000/public/player.html"
+
+        if (hls) hls.destroy(); // Reset if already running
+
+        if (Hls.isSupported()) {
+          hls = new Hls();
+          hls.loadSource(streamUrl);
+          hls.attachMedia(video);
+
+          hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+            // Populate the quality selector
+            const levels = hls.levels;
+
+            // Clear existing options except "Auto"
+            selector.innerHTML = '<option value="-1">Auto (ABR)</option>';
+
+            levels.forEach((level, index) => {
+              const name = level.name || `${level.height}p`;
+              const option = document.createElement("option");
+              option.value = index;
+              option.text = name;
+              selector.add(option);
+            });
+
+            selector.disabled = false;
+            video.play();
+          });
+
+          hls.on(Hls.Events.ERROR, function (event, data) {
+            if (data.fatal) {
+              console.error("HLS Error:", data);
+              hls.recoverMediaError();
+            }
+          });
+
+          // Logs whenever the ABR controller switches the quality
+          hls.on(Hls.Events.LEVEL_SWITCHED, function (event, data) {
+            const levelIndex = data.level;
+            const levelInfo = hls.levels[levelIndex];
+            console.log(
+              `Current Quality: ${levelInfo.height}p | Bitrate: ${(levelInfo.bitrate / 1000).toFixed(0)} kbps`,
+            );
+          });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          // Safari fallback
+          video.src = streamUrl;
+          video.play();
+          console.log(
+            "Native HLS (Safari) detected. Manual quality switching not supported via this UI.",
+          );
+        }
+      }
+
+      function changeQuality(newLevel) {
+        if (!hls) return;
+
+        // hls.currentLevel = -1 enables Auto ABR
+        // hls.currentLevel = index forces a specific level
+        console.log(`Changing quality to level index: ${newLevel}`);
+        hls.currentLevel = parseInt(newLevel);
+      }
+    </script>
+  </body>
 </html>

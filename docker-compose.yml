@@ -1,34 +1,43 @@
-version: "3.9"
-
 services:
+  # MediaMTX handles the ingest
   mediamtx:
     image: bluenviron/mediamtx:latest
+    platform: linux/arm64/v8
     volumes:
       - ./docker/mediamtx.yml:/mediamtx.yml:ro
     ports:
-      - "1935:1935"   # RTMP
-      - "8888:8888"   # HLS (optional)
+      - "1935:1935"
     restart: unless-stopped
 
+  # Switched to official MWERDERMAN image which has better ARM64 support
   ffmpeg:
-    image: jrottenberg/ffmpeg:6-alpine
+    image: mwader/static-ffmpeg:6.1
+    platform: linux/arm64/v8
     depends_on:
       - mediamtx
     volumes:
       - ./streams:/app/streams
     restart: unless-stopped
     command: >
-      -fflags nobuffer -flags low_delay
+      -fflags +genpts+discardcorrupt -flags low_delay -thread_queue_size 1024
       -i rtmp://mediamtx:1935/live/test
-      -c:v libx264 -preset veryfast -tune zerolatency
-      -g 30 -keyint_min 30 -sc_threshold 0
-      -c:a aac -ar 48000
-      -f hls -hls_time 2 -hls_list_size 3
-      -hls_flags delete_segments+append_list+omit_endlist+independent_segments
-      /app/streams/hls/index.m3u8
+      -filter_complex "[0:v]scale=w=256:h=144[v144]"
+      -map 0:v -c:v:0 copy
+      -map "[v144]" -c:v:1 libx264 -b:v:1 150k -preset ultrafast -g 30 -sc_threshold 0
+      -map 0:a -c:a:0 copy
+      -map 0:a -c:a:1 aac -b:a:1 64k
+      -f hls 
+      -hls_time 2 
+      -hls_list_size 3 
+      -hls_flags delete_segments+independent_segments 
+      -master_pl_name master.m3u8 
+      -var_stream_map "v:0,a:0,name:Source v:1,a:1,name:144p" 
+      -hls_segment_filename "/app/streams/hls/v%v/file%03d.ts"
+      /app/streams/hls/v%v/index.m3u8
 
   server:
     image: node:20-alpine
+    platform: linux/arm64/v8
     working_dir: /app
     volumes:
       - ./server:/app
