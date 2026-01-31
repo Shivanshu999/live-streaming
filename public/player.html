@@ -3,148 +3,231 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ABR Player with Quality Control</title>
+    <title>Dev Stream Monitor</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
       body {
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        font-family: monospace;
+        background: #0f172a;
+        color: #e2e8f0;
         display: flex;
         flex-direction: column;
         align-items: center;
-        background: #0f172a;
-        color: white;
         padding: 20px;
       }
-      .video-container {
+      .video-wrapper {
+        position: relative;
         width: 100%;
         max-width: 800px;
-        position: relative;
       }
       video {
         width: 100%;
         background: black;
-        border-radius: 12px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
       }
-      .controls {
-        margin-top: 20px;
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        flex-wrap: wrap;
+      /* Real-time Debug Overlay */
+      #debug-overlay {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 8px;
+        border-radius: 4px;
+        pointer-events: none;
+        font-size: 12px;
+        line-height: 1.4;
       }
-      button,
-      select {
-        padding: 10px 16px;
-        cursor: pointer;
+      .controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 15px;}
+      
+      /* Main Load Button */
+      .main-btn {
         background: #3b82f6;
-        border: none;
         color: white;
-        border-radius: 6px;
-        font-weight: 600;
-        transition: background 0.2s;
-      }
-      button:hover {
-        background: #2563eb;
-      }
-      select {
-        background: #334155;
-      }
-      label {
+        border: none;
+        padding: 12px 24px;
+        border-radius: 4px;
+        cursor: pointer;
         font-weight: bold;
-        margin-right: 5px;
+        font-size: 16px;
+      }
+      .main-btn:hover { background: #2563eb; }
+
+      /* Quality Button Container */
+      #quality-buttons {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      /* Individual Quality Buttons */
+      .quality-btn {
+        background: #334155;
+        color: white;
+        border: 1px solid #475569;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: monospace;
+        transition: all 0.2s;
+      }
+      .quality-btn:hover { background: #475569; }
+      .quality-btn.active {
+        background: #22c55e; /* Green for active */
+        border-color: #22c55e;
+        color: black;
+        font-weight: bold;
       }
     </style>
   </head>
   <body>
-    <h2>Live Adaptive Stream</h2>
-
-    <div class="video-container">
+    <div class="video-wrapper">
       <video id="v" controls muted playsinline></video>
+      <div id="debug-overlay">
+        Waiting for stream data...<br>
+        <span id="buffer-stat">Buffer: 0s</span>
+      </div>
     </div>
 
     <div class="controls">
-      <button onclick="startStream()">▶️ Load Stream</button>
-
-      <div>
-        <label for="qualitySelect">Quality:</label>
-        <select
-          id="qualitySelect"
-          disabled
-          onchange="changeQuality(this.value)"
-        >
-          <option value="-1">Auto (ABR)</option>
-        </select>
-      </div>
+      <button class="main-btn" onclick="startStream()">▶️ Load Stream</button>
+      
+      <div id="quality-buttons" style="display: none;"></div>
     </div>
 
     <script>
       let hls = null;
+      const debugEl = document.getElementById("debug-overlay");
+      
+      // Update the Debug Overlay with real-time stats
+      function updateStats(hls, video) {
+        if (!hls || !video) return;
+        const buf = video.buffered;
+        const lat = hls.latency;
+        
+        // Calculate forward buffer length
+        let bufferLen = 0;
+        if (buf.length > 0 && !isNaN(video.currentTime)) {
+           for (let i = 0; i < buf.length; i++) {
+             if (buf.start(i) <= video.currentTime && video.currentTime <= buf.end(i)) {
+               bufferLen = buf.end(i) - video.currentTime;
+               break;
+             }
+           }
+        }
+        
+        debugEl.innerHTML = `
+          Latency: ${lat.toFixed(2)}s<br>
+          Buffer Ahead: ${bufferLen.toFixed(2)}s<br>
+          Drift: ${hls.drift.toFixed(2)}
+        `;
+        
+        // Color code status for quick diagnosis
+        if (bufferLen < 2) debugEl.style.color = "#ef4444"; // Red (Danger)
+        else if (bufferLen < 6) debugEl.style.color = "#f59e0b"; // Yellow (Warning)
+        else debugEl.style.color = "#22c55e"; // Green (Stable)
+      }
 
       function startStream() {
         const video = document.getElementById("v");
-        const selector = document.getElementById("qualitySelect");
+        const btnContainer = document.getElementById("quality-buttons");
         const streamUrl = "http://localhost:3000/hls/master.m3u8";
-        const realURl = "http://localhost:3000/public/player.html"
 
-        if (hls) hls.destroy(); // Reset if already running
+        if (hls) hls.destroy();
 
         if (Hls.isSupported()) {
-          hls = new Hls();
+          hls = new Hls({
+            // === STABILITY SETTINGS FOR MACBOOK AIR ===
+            liveSyncDurationCount: 3,     // Target 3 segments (12s) behind live
+            maxBufferLength: 30,          // Keep up to 30s in memory
+            enableWorker: true,
+            lowLatencyMode: false,        // DISABLE low latency to fix freezing
+            manifestLoadingTimeOut: 10000,
+            levelLoadingTimeOut: 10000,
+            fragLoadingTimeOut: 20000,    // Wait 20s for a segment before giving up
+          });
+
           hls.loadSource(streamUrl);
           hls.attachMedia(video);
 
-          hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
-            // Populate the quality selector
-            const levels = hls.levels;
-
-            // Clear existing options except "Auto"
-            selector.innerHTML = '<option value="-1">Auto (ABR)</option>';
-
-            levels.forEach((level, index) => {
-              const name = level.name || `${level.height}p`;
-              const option = document.createElement("option");
-              option.value = index;
-              option.text = name;
-              selector.add(option);
-            });
-
-            selector.disabled = false;
+          hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+            console.log("Manifest loaded, starting playback...");
+            
+            // Generate Quality Buttons
+            createQualityButtons(hls.levels, btnContainer);
+            
             video.play();
+            
+            // Start debug loop (updates every 500ms)
+            setInterval(() => updateStats(hls, video), 500);
           });
 
           hls.on(Hls.Events.ERROR, function (event, data) {
+            console.warn("HLS Error:", data.type, data.details);
             if (data.fatal) {
-              console.error("HLS Error:", data);
-              hls.recoverMediaError();
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  console.log("Network error, trying to recover...");
+                  hls.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  console.log("Media error, recovering...");
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  hls.destroy();
+                  break;
+              }
             }
           });
-
-          // Logs whenever the ABR controller switches the quality
+          
+          // Log quality switches (Auto or Manual)
           hls.on(Hls.Events.LEVEL_SWITCHED, function (event, data) {
-            const levelIndex = data.level;
-            const levelInfo = hls.levels[levelIndex];
-            console.log(
-              `Current Quality: ${levelInfo.height}p | Bitrate: ${(levelInfo.bitrate / 1000).toFixed(0)} kbps`,
-            );
+             const level = hls.levels[data.level];
+             console.log(`Switched to: ${level.name || level.height + 'p'}`);
           });
-        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          // Safari fallback
-          video.src = streamUrl;
-          video.play();
-          console.log(
-            "Native HLS (Safari) detected. Manual quality switching not supported via this UI.",
-          );
         }
       }
 
-      function changeQuality(newLevel) {
-        if (!hls) return;
+      function createQualityButtons(levels, container) {
+        container.innerHTML = ''; // Clear previous buttons
+        container.style.display = "flex";
 
-        // hls.currentLevel = -1 enables Auto ABR
-        // hls.currentLevel = index forces a specific level
-        console.log(`Changing quality to level index: ${newLevel}`);
-        hls.currentLevel = parseInt(newLevel);
+        // 1. Create "Auto" Button
+        const autoBtn = document.createElement("button");
+        autoBtn.innerText = "Auto";
+        autoBtn.className = "quality-btn active"; // Default to active
+        autoBtn.onclick = () => {
+          hls.currentLevel = -1; // -1 enables Auto ABR
+          updateActiveButton(container, autoBtn);
+        };
+        container.appendChild(autoBtn);
+
+        // 2. Create Buttons for each Level (Source, 480p, etc.)
+        levels.forEach((level, index) => {
+          const btn = document.createElement("button");
+          // Use the name from Docker (e.g. "480p") or fallback to height
+          btn.innerText = level.name || `${level.height}p`; 
+          btn.className = "quality-btn";
+          
+          btn.onclick = () => {
+            console.log(`Manual switch to: ${btn.innerText}`);
+            hls.currentLevel = index; // Force specific level
+            updateActiveButton(container, btn);
+          };
+          container.appendChild(btn);
+        });
+      }
+
+      function updateActiveButton(container, activeBtn) {
+        // Remove 'active' class from all buttons
+        const buttons = container.getElementsByClassName("quality-btn");
+        for (let btn of buttons) {
+          btn.classList.remove("active");
+        }
+        // Add 'active' class to the clicked button
+        activeBtn.classList.add("active");
       }
     </script>
   </body>
