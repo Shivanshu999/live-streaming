@@ -2,4 +2,8 @@ node_modules
 .DS_Store
 streams/hls
 npm-debug.log
-readme1.md
+
+# Ignore all stream content...
+streams/*
+# ...but keep the folder itself
+!streams/.gitkeep
