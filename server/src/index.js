@@ -1,7 +1,10 @@
+//src/index.js
 import express from "express";
-import path from "path";
 
 const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // CORS (required for ABR and HLS playback)
 app.use((req, res, next) => {
@@ -31,9 +34,25 @@ app.use(
   })
 );
 
+
+
 // Player files
 // Updated to /app/public to match the new volume mount
 app.use("/public", express.static("/app/public"));
+
+
+app.post("/hooks/stream-start", (req, res) => {
+  console.log("Stream started");
+  console.log("Stream info", req.body);
+  res.sendStatus(200);
+})
+
+
+app.post("/hooks/stream-end", (req, res) => {
+  console.log("STREAM ENDED");
+  console.log("Stream info", req.body);
+  res.sendStatus(200);
+})
 
 app.listen(3000, "0.0.0.0", () => {
   console.log("Server running on http://localhost:3000");
