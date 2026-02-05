@@ -1,5 +1,4 @@
 services:
-  # Nginx handles the RTMP ingest
   nginx:
     image: tiangolo/nginx-rtmp
     platform: linux/arm64/v8
@@ -7,52 +6,15 @@ services:
       - "1935:1935"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./streams:/tmp/hls          # 🔥 THIS LINE WAS MISSING
     restart: always
 
-  # FFmpeg: Source Copy + 480p + 240p + 144p
-  ffmpeg:
-    image: linuxserver/ffmpeg:latest
-    platform: linux/arm64/v8
-    depends_on:
-      - nginx
-    volumes:
-      - ./streams:/app/streams
-    restart: always 
-    command: >
-      -fflags +genpts+discardcorrupt -flags low_delay -thread_queue_size 1024
-      -rw_timeout 5000000
-      -i rtmp://nginx:1935/live/test
-      -filter_complex "
-        [0:v]scale=w=854:h=480[v480];
-        [0:v]scale=w=426:h=240[v240];
-        [0:v]scale=w=256:h=144[v144]"
-      -map 0:v -c:v:0 copy
-      -map "[v480]" -c:v:1 libx264 -b:v:1 1400k -maxrate 1400k -bufsize 2800k -preset ultrafast -g 120 -sc_threshold 0
-      -map "[v240]" -c:v:2 libx264 -b:v:2 600k -maxrate 600k -bufsize 1200k -preset ultrafast -g 120 -sc_threshold 0
-      -map "[v144]" -c:v:3 libx264 -b:v:3 200k -maxrate 200k -bufsize 400k -preset ultrafast -g 120 -sc_threshold 0
-      -map 0:a -c:a:0 copy
-      -map 0:a -c:a:1 copy
-      -map 0:a -c:a:2 copy
-      -map 0:a -c:a:3 copy
-      -f hls 
-      -hls_time 4 
-      -hls_list_size 10 
-      -hls_flags delete_segments+independent_segments 
-      -master_pl_name master.m3u8 
-      -var_stream_map "v:0,a:0,name:Source v:1,a:1,name:480p v:2,a:2,name:240p v:3,a:3,name:144p" 
-      -hls_segment_filename "/app/streams/hls/v%v/file%03d.ts"
-      /app/streams/hls/v%v/index.m3u8
-
-  # Node server serves the updated player.html
   server:
-    image: node:20-alpine
+    build: ./server
     platform: linux/arm64/v8
-    working_dir: /app/server
     volumes:
-      - ./server:/app/server
-      - ./streams:/app/streams
+      - ./streams:/app/streams      # same host folder
       - ./public:/app/public
     ports:
       - "3000:3000"
-    command: sh -c "npm install && node src/index.js"
     restart: always
