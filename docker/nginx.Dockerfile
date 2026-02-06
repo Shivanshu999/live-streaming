@@ -1,3 +1,5 @@
 FROM tiangolo/nginx-rtmp
 
-RUN apk add --no-cache ffmpeg
+RUN apt-get update \
+ && apt-get install -y ffmpeg \
+ && rm -rf /var/lib/apt/lists/*

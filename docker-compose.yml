@@ -1,21 +1,17 @@
 services:
   nginx:
-    build:
-      context: .
-      dockerfile: docker/nginx.Dockerfile
-    platform: linux/arm64/v8
+    image: tiangolo/nginx-rtmp
     ports:
       - "1935:1935"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./streams:/tmp/hls
+      - ./streams:/app/streams   # ⬅️ CHANGE HERE
     restart: always
 
   server:
     build: ./server
-    platform: linux/arm64/v8
     volumes:
-      - ./streams:/app/streams
+      - ./streams:/app/streams   # ⬅️ SAME PATH
       - ./public:/app/public
     ports:
       - "3000:3000"
