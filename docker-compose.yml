@@ -1,19 +1,21 @@
 services:
   nginx:
-    image: tiangolo/nginx-rtmp
+    build:
+      context: .
+      dockerfile: docker/nginx.Dockerfile
     platform: linux/arm64/v8
     ports:
       - "1935:1935"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./streams:/tmp/hls          # 🔥 THIS LINE WAS MISSING
+      - ./streams:/tmp/hls
     restart: always
 
   server:
     build: ./server
     platform: linux/arm64/v8
     volumes:
-      - ./streams:/app/streams      # same host folder
+      - ./streams:/app/streams
       - ./public:/app/public
     ports:
       - "3000:3000"
